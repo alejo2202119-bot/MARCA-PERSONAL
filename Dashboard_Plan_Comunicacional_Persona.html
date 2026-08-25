@@ -832,9 +832,73 @@ footer.doc-foot b{color:var(--emerald-bright);}
 @media print{
   body.print-mode .toast,body.print-mode .fb-dialog{display:none !important;}
 }
+
+/* ============================================================
+   PANTALLA DE CONTRASEÑA (gate de acceso)
+   Filtro visual, no seguridad real: el HTML es público, así que
+   cualquiera con el archivo puede leer la contraseña en el código
+   fuente. La protección real de los datos la da la regla de
+   Firestore (exige sesión anónima activa antes de escribir), que
+   se dispara justo después de pasar esta pantalla.
+   ============================================================ */
+html:not(.gate-unlocked) .shell,
+html:not(.gate-unlocked) .toast,
+html:not(.gate-unlocked) #printReport{display:none !important;}
+html.gate-unlocked .gate-overlay{display:none !important;}
+
+.gate-overlay{
+  position:fixed;inset:0;z-index:200;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  background:linear-gradient(180deg,var(--emerald-deep) 0%,var(--black) 130%);
+}
+.gate-card{
+  background:var(--white);border-radius:var(--radius);
+  padding:34px 30px 30px;max-width:360px;width:100%;
+  box-shadow:0 24px 60px rgba(6,40,33,.35);text-align:center;
+}
+.gate-card .gate-eyebrow{
+  font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--emerald-core);margin:0 0 8px;
+}
+.gate-card h2{margin:0 0 8px;font-size:19px;font-weight:600;color:var(--black);}
+.gate-card p{margin:0 0 20px;font-size:12.5px;color:var(--gray);line-height:1.5;}
+.gate-card input[type="password"]{
+  width:100%;font-family:'IBM Plex Mono',monospace;font-size:14px;
+  border:1px solid var(--border);border-radius:10px;padding:11px 14px;
+  text-align:center;letter-spacing:.08em;color:var(--black);background:var(--paper);
+}
+.gate-card input[type="password"]:focus{outline:2px solid var(--emerald-core);outline-offset:-1px;}
+.gate-card .gate-submit{
+  margin-top:12px;width:100%;background:var(--emerald-core);color:#fff;border:none;
+  font-family:'Inter',sans-serif;font-weight:600;font-size:13.5px;
+  padding:11px 16px;border-radius:100px;cursor:pointer;transition:background .15s ease;
+}
+.gate-card .gate-submit:hover{background:var(--emerald-deep-2);}
+.gate-card .gate-error{min-height:16px;margin:10px 0 0;font-size:12px;color:#b91c1c;font-weight:600;}
+.gate-overlay.shake .gate-card{animation:gateShake .4s ease;}
+@keyframes gateShake{
+  0%,100%{transform:translateX(0);}
+  20%{transform:translateX(-8px);}
+  40%{transform:translateX(8px);}
+  60%{transform:translateX(-5px);}
+  80%{transform:translateX(5px);}
+}
 </style>
 </head>
 <body>
+
+<div class="gate-overlay" id="gateOverlay">
+  <div class="gate-card">
+    <p class="gate-eyebrow">Acceso restringido</p>
+    <h2>Plan Comunicacional · Marca Persona</h2>
+    <p>Documento de trabajo interno. Ingresa la contraseña del equipo para continuar.</p>
+    <form id="gateForm" autocomplete="off">
+      <input type="password" id="gateInput" name="gate-password" placeholder="Contraseña" autocomplete="current-password" required>
+      <p class="gate-error" id="gateError" role="alert"></p>
+      <button type="submit" class="gate-submit">Entrar</button>
+    </form>
+  </div>
+</div>
 
 <div class="shell">
   <!-- ================= SIDEBAR ================= -->
@@ -1146,14 +1210,36 @@ footer.doc-foot b{color:var(--emerald-bright);}
    3. Los botones Bien / Proceso / Atención y las casillas del checklist
       escriben de vuelta a Firestore (setDoc con merge). Sin conexión,
       se guardan en localStorage de este equipo.
+   4. El dashboard queda detrás de una pantalla de contraseña (filtro
+      visual, no seguridad real — ver DASHBOARD_PASSWORD más abajo). Justo
+      al pasarla se dispara una sesión anónima de Firebase Auth
+      (signInAnonymously); solo después de esa sesión se marca la
+      conexión como "en vivo" y se permite escribir en Firestore. Las
+      reglas del proyecto exigen esa sesión (request.auth != null) para
+      cualquier escritura — ver firestore.rules en el repositorio.
    ===================================================================== */
 'use strict';
 
 /* ============ 0 · CONFIGURACIÓN DE ESTA INSTANCIA ============ */
 const BRAND_NAME  = 'Marca Persona';
-const BRAND_SLUG  = 'persona';           // colección raíz en Firestore
+// Nombre EXACTO de la colección raíz en Firestore — molde compartido con
+// los dashboards de Territorio y Gestión y con el dashboard general
+// (solo lectura) que consolida las tres. No renombrar sin avisar a los
+// otros equipos: el dashboard general asume esta misma convención
+// ("marca_" + slug de la marca) para las tres colecciones.
+const BRAND_SLUG  = 'marca_personal';
 const DOC_TITLE   = 'Plan Comunicacional Integrado · ' + BRAND_NAME;
 const FIREBASE_PROJECT = 'MARCAS GENERALES';
+
+/* ---------------------------------------------------------------------
+   TODO: reemplaza esta contraseña por la real antes de compartir el
+   link con el equipo. Es solo un filtro visual (el HTML es público, así
+   que el texto es legible en el código fuente) — la protección real de
+   los datos la da la regla de Firestore, que exige sesión anónima activa
+   antes de escribir (ver firestore.rules). La sesión anónima se crea
+   automáticamente justo después de pasar esta pantalla.
+   --------------------------------------------------------------------- */
+const DASHBOARD_PASSWORD = 'CAMBIAR-ESTA-CLAVE';
 
 /* ---------------------------------------------------------------------
    Pega aquí el firebaseConfig del proyecto "MARCAS GENERALES" para dejar
@@ -2121,6 +2207,7 @@ navBtns.forEach(function (btn, i) {
 });
 
 document.addEventListener('keydown', function (e) {
+  if (!document.documentElement.classList.contains('gate-unlocked')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = (e.target && e.target.tagName) || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -2151,7 +2238,7 @@ document.addEventListener('keydown', function (e) {
    platformRows y reportRows son iguales para las tres marcas y quedan
    fijas en el código (no viven en Firestore).
    ================================================================ */
-const fb = { app: null, db: null, api: null, live: false, unsubs: [], connecting: false };
+const fb = { app: null, db: null, api: null, auth: null, authApi: null, user: null, live: false, unsubs: [], connecting: false };
 
 function fbConfigKey() { return LS_PREFIX + 'fb_config_v1'; }
 function loadStoredFbConfig() { return safeStorage.get(fbConfigKey()); }
@@ -2236,22 +2323,46 @@ function onFsError(where, err) {
   toast('Firestore: no se pudo leer "' + where + '"');
 }
 
+/* Inicia sesión anónima si aún no hay una activa en este navegador.
+   Se espera SIEMPRE antes de marcar fb.live = true, así ninguna
+   escritura (setStatus, setCheck, seedFirestore) puede dispararse sin
+   una sesión de Firebase Auth ya establecida — que es justo lo que la
+   regla de Firestore exige para permitir escribir. */
+function ensureAnonymousSession(authApi, auth) {
+  return new Promise(function (resolve, reject) {
+    const unsub = authApi.onAuthStateChanged(auth, function (user) {
+      unsub();
+      if (user) { resolve(user); return; }
+      authApi.signInAnonymously(auth).then(function (cred) { resolve(cred.user); }).catch(reject);
+    }, reject);
+  });
+}
+
 async function connectFirebase(cfg) {
   if (fb.connecting) return;
   fb.connecting = true;
   setConnBadge('loading', 'Conectando…');
   setLoadbar(true, 'Conectando con Firestore (' + FIREBASE_PROJECT + ')…');
   try {
-    const [{ initializeApp, getApps, getApp }, firestoreMod] = await Promise.all([
+    const [{ initializeApp, getApps, getApp }, firestoreMod, authMod] = await Promise.all([
       import(FIREBASE_SDK + 'firebase-app.js'),
-      import(FIREBASE_SDK + 'firebase-firestore.js')
+      import(FIREBASE_SDK + 'firebase-firestore.js'),
+      import(FIREBASE_SDK + 'firebase-auth.js')
     ]);
     teardownListeners();
     const app = (getApps().length ? getApp() : initializeApp(cfg));
     const db = firestoreMod.getFirestore(app);
+    const auth = authMod.getAuth(app);
+
+    setLoadbar(true, 'Iniciando sesión anónima…');
+    const user = await ensureAnonymousSession(authMod, auth);
+
     fb.app = app;
     fb.db = db;
     fb.api = firestoreMod;
+    fb.auth = auth;
+    fb.authApi = authMod;
+    fb.user = user;
     attachListeners();
     fb.live = true;
     fb.connecting = false;
@@ -2305,7 +2416,7 @@ function refreshFbStatus() {
   const status = $('fbStatus');
   if (!status) return;
   if (fb.live) {
-    status.textContent = 'Conectado a Firestore · proyecto "' + FIREBASE_PROJECT + '" · colección "' + BRAND_SLUG + '".';
+    status.textContent = 'Conectado a Firestore · proyecto "' + FIREBASE_PROJECT + '" · colección "' + BRAND_SLUG + '" · sesión anónima ' + (fb.user ? 'activa (' + fb.user.uid.slice(0, 8) + '…)' : 'activa') + '.';
   } else if (stored) {
     status.textContent = 'Hay una configuración guardada en este navegador, pero la conexión no está activa. Pulsa "Conectar y guardar" para reintentar.';
   } else {
@@ -2396,12 +2507,18 @@ function wireStaticButtons() {
   window.addEventListener('afterprint', function () { document.body.classList.remove('print-mode'); });
 }
 
-async function boot() {
-  renderStaticTables();
-  renderAllFromState(); // contenido local inmediato: nunca hay pantalla en blanco
-  wireStaticButtons();
-  wireFbDialog();
+/* ---- Pantalla de contraseña ----
+   Se guarda "desbloqueado" en localStorage de este navegador para no
+   pedir la clave en cada visita. La sesión anónima de Firebase (y por lo
+   tanto cualquier escritura a Firestore) solo se dispara DESPUÉS de
+   pasar esta pantalla, tal como pide la especificación. */
+function isGateUnlocked() { return safeStorage.get(LS_PREFIX + 'gate_unlocked_v1') === true; }
+function unlockGate() {
+  safeStorage.set(LS_PREFIX + 'gate_unlocked_v1', true);
+  document.documentElement.classList.add('gate-unlocked');
+}
 
+async function attemptFirebaseConnect() {
   const cfg = effectiveFbConfig();
   if (cfg) {
     const result = await connectFirebase(cfg);
@@ -2412,6 +2529,49 @@ async function boot() {
   } else {
     setConnBadge(null, 'Modo local');
     setLoadbar(false);
+  }
+}
+
+function wireGate() {
+  const overlay = $('gateOverlay');
+  const form = $('gateForm');
+  const input = $('gateInput');
+  const err = $('gateError');
+  if (!form || !input || !err) return;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const val = input.value.trim();
+    if (val && val === DASHBOARD_PASSWORD) {
+      err.textContent = '';
+      unlockGate();
+      attemptFirebaseConnect();
+    } else {
+      err.textContent = 'Contraseña incorrecta. Intenta de nuevo.';
+      input.value = '';
+      input.focus();
+      if (overlay) {
+        overlay.classList.add('shake');
+        setTimeout(function () { overlay.classList.remove('shake'); }, 400);
+      }
+    }
+  });
+}
+
+async function boot() {
+  renderStaticTables();
+  renderAllFromState(); // contenido local inmediato: nunca hay pantalla en blanco
+  wireStaticButtons();
+  wireFbDialog();
+  wireGate();
+
+  if (isGateUnlocked()) {
+    document.documentElement.classList.add('gate-unlocked');
+    await attemptFirebaseConnect();
+  } else {
+    setConnBadge(null, 'Bloqueado');
+    setLoadbar(false);
+    const gateInput = $('gateInput');
+    if (gateInput) gateInput.focus();
   }
 }
 

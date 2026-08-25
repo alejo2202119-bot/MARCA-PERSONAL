@@ -2,30 +2,39 @@ rules_version = '2';
 
 /*
  * Reglas de seguridad — proyecto Firebase "MARCAS GENERALES"
- * Compartido por las tres marcas: persona, territorio, gestion.
+ * Compartido por los tres dashboards de marca (Persona, Territorio,
+ * Gestión) y por el dashboard general de solo lectura que los consolida.
  *
- * Este dashboard es una herramienta interna sin sistema de login propio
- * todavía, así que no podemos exigir Firebase Auth sin antes construir
- * ese flujo. Como opción intermedia (permitida explícitamente por el
- * lineamiento de "regla simple para uso interno muy acotado"), el acceso
- * queda abierto SOLO a las tres colecciones del proyecto y SOLO hasta la
- * fecha de expiración de abajo — nunca en modo prueba indefinido.
+ * IMPORTANTE — este archivo es ÚNICO para todo el proyecto Firebase:
+ * no hay un firestore.rules por dashboard. Si cada equipo despliega el
+ * suyo por separado desde su propio repositorio con
+ * `firebase deploy --only firestore:rules`, el último en desplegar
+ * pisa las reglas de los otros dos. Antes de que los tres equipos
+ * empiecen a trabajar, hay que acordar UNA sola fuente de verdad para
+ * este archivo (una sola persona lo despliega, o se gestiona a mano
+ * desde la pestaña "Reglas" de la Consola de Firebase) y todos los
+ * repos lo mantienen igual solo como referencia.
  *
- * Antes de esa fecha (o antes si el equipo lo prioriza), se recomienda
- * migrar a Firebase Authentication (p. ej. Google Sign-In restringido al
- * dominio de correo del equipo) y reemplazar esta condición de fecha por
- * `request.auth != null`.
+ * Modelo de acceso:
+ *   - Lectura: abierta para las tres colecciones de marca. El
+ *     dashboard general solo lee, así no necesita implementar su
+ *     propio inicio de sesión.
+ *   - Escritura: exige una sesión de Firebase Auth activa
+ *     (request.auth != null). Cada dashboard de marca inicia sesión
+ *     anónima (signInAnonymously) automáticamente justo después de
+ *     pasar su pantalla de contraseña interna — ver DASHBOARD_PASSWORD
+ *     en el HTML de cada dashboard.
+ *   - Nombres de colección esperados: "marca_personal",
+ *     "marca_territorio", "marca_gestion". Si el equipo de Territorio o
+ *     Gestión usa el mismo molde, deben usar exactamente esos nombres.
  */
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function withinPilotWindow() {
-      return request.time < timestamp.date(2026, 12, 31);
-    }
-
     match /{brand}/plan/{collection}/{docId} {
-      allow read: if brand in ['persona', 'territorio', 'gestion'];
-      allow write: if brand in ['persona', 'territorio', 'gestion'] && withinPilotWindow();
+      allow read: if brand in ['marca_personal', 'marca_territorio', 'marca_gestion'];
+      allow write: if brand in ['marca_personal', 'marca_territorio', 'marca_gestion']
+                   && request.auth != null;
     }
 
     // Cualquier otro documento del proyecto queda cerrado por defecto.
