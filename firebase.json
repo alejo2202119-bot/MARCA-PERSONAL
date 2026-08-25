@@ -1,0 +1,21 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "firestore.rules",
+      "firestore.indexes.json",
+      "**/.*"
+    ],
+    "rewrites": [
+      {
+        "source": "/",
+        "destination": "/Dashboard_Plan_Comunicacional_Persona.html"
+      }
+    ]
+  }
+}

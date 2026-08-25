@@ -1,0 +1,36 @@
+rules_version = '2';
+
+/*
+ * Reglas de seguridad — proyecto Firebase "MARCAS GENERALES"
+ * Compartido por las tres marcas: persona, territorio, gestion.
+ *
+ * Este dashboard es una herramienta interna sin sistema de login propio
+ * todavía, así que no podemos exigir Firebase Auth sin antes construir
+ * ese flujo. Como opción intermedia (permitida explícitamente por el
+ * lineamiento de "regla simple para uso interno muy acotado"), el acceso
+ * queda abierto SOLO a las tres colecciones del proyecto y SOLO hasta la
+ * fecha de expiración de abajo — nunca en modo prueba indefinido.
+ *
+ * Antes de esa fecha (o antes si el equipo lo prioriza), se recomienda
+ * migrar a Firebase Authentication (p. ej. Google Sign-In restringido al
+ * dominio de correo del equipo) y reemplazar esta condición de fecha por
+ * `request.auth != null`.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function withinPilotWindow() {
+      return request.time < timestamp.date(2026, 12, 31);
+    }
+
+    match /{brand}/plan/{collection}/{docId} {
+      allow read: if brand in ['persona', 'territorio', 'gestion'];
+      allow write: if brand in ['persona', 'territorio', 'gestion'] && withinPilotWindow();
+    }
+
+    // Cualquier otro documento del proyecto queda cerrado por defecto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
